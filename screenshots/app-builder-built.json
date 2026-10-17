@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Digitalni Sef",
+      "hasCanvas": false,
+      "bodyTextLen": 1146,
+      "bodyTextHash": "a539ca567cfb883752ab1f56e9117ba07754716fd8001744ff57d12d087a6ac0",
+      "bodyTextPrefix": "Board Folders Templates Settings Documents Cards List Soonest Ad",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Digitalni Sef",
+      "hasCanvas": false,
+      "bodyTextLen": 1146,
+      "bodyTextHash": "a539ca567cfb883752ab1f56e9117ba07754716fd8001744ff57d12d087a6ac0",
+      "bodyTextPrefix": "Board Folders Templates Settings Documents Cards List Soonest Ad",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}

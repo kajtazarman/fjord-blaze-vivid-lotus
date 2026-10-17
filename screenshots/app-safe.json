@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/app",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Digitalni Sef",
+      "hasCanvas": false,
+      "bodyTextLen": 1354,
+      "bodyTextHash": "ab4587bed714fed5bae9c6d1ab23787a6533e76eb8f13b9e5946e695e2ed0496",
+      "bodyTextPrefix": "THE SAFE Digitalni Sef Library Add document ON THE DOCKET 6 Trac",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-safe.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Digitalni Sef",
+      "hasCanvas": false,
+      "bodyTextLen": 1354,
+      "bodyTextHash": "ab4587bed714fed5bae9c6d1ab23787a6533e76eb8f13b9e5946e695e2ed0496",
+      "bodyTextPrefix": "THE SAFE Digitalni Sef Library Add document ON THE DOCKET 6 Trac",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-safe-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-safe.json"
+}
