@@ -17,6 +17,7 @@ type DatePickerProps = {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  contained?: boolean;
 };
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
@@ -27,7 +28,7 @@ function parseDay(value: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function DatePicker({ value, onChange, label = "Date" }: DatePickerProps) {
+export function DatePicker({ value, onChange, label = "Date", contained = false }: DatePickerProps) {
   const selected = parseDay(value);
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(() => startOfMonth(selected ?? new Date()));
@@ -87,69 +88,115 @@ export function DatePicker({ value, onChange, label = "Date" }: DatePickerProps)
       >
         {selected ? format(selected, "d MMM yyyy") : <span className="text-subtle">Pick a date</span>}
       </button>
-      {open
-        ? createPortal(
+      {open ? (
+        contained ? (
+          <div data-datepicker="" className="mt-2 w-full rounded-xl border border-border bg-card p-4 text-foreground shadow-[var(--shadow-card)]">
+            <CalendarBody
+              cursor={cursor}
+              days={days}
+              selected={selected}
+              today={today}
+              onCursor={setCursor}
+              onPick={(day) => {
+                onChange(format(day, "yyyy-MM-dd"));
+                setOpen(false);
+              }}
+            />
+          </div>
+        ) : (
+        createPortal(
             <div
               ref={panelRef}
+              data-datepicker=""
               role="dialog"
               aria-label={label}
               style={{ top: box.top, left: box.left }}
               className="fixed z-[80] w-[348px] rounded-xl border border-border bg-card p-4 text-foreground shadow-[0_16px_40px_rgba(15,15,15,0.14)]"
             >
-              <div className="mb-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  aria-label="Previous month"
-                  className="flex size-10 items-center justify-center rounded-md hover:bg-muted"
-                  onClick={() => setCursor((month) => addMonths(month, -1))}
-                >
-                  <ChevronLeft className="size-5" />
-                </button>
-                <p className="text-base font-semibold tracking-tight">{format(cursor, "MMMM yyyy")}</p>
-                <button
-                  type="button"
-                  aria-label="Next month"
-                  className="flex size-10 items-center justify-center rounded-md hover:bg-muted"
-                  onClick={() => setCursor((month) => addMonths(month, 1))}
-                >
-                  <ChevronRight className="size-5" />
-                </button>
-              </div>
-              <div className="mb-1 grid grid-cols-7 text-center text-xs font-medium text-muted-foreground">
-                {WEEKDAYS.map((day, index) => (
-                  <span key={`${day}-${index}`} className="flex h-8 items-center justify-center">
-                    {day}
-                  </span>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 justify-items-center">
-                {days.map((day) => {
-                  const on = selected ? isSameDay(day, selected) : false;
-                  const inMonth = isSameMonth(day, cursor);
-                  return (
-                    <button
-                      key={day.toISOString()}
-                      type="button"
-                      onClick={() => {
-                        onChange(format(day, "yyyy-MM-dd"));
-                        setOpen(false);
-                      }}
-                      className={cn(
-                        "flex size-11 items-center justify-center rounded-full text-[15px] font-medium",
-                        !inMonth && "text-muted-foreground/40",
-                        !on && isSameDay(day, today) && "bg-muted",
-                        on ? "bg-[#0075de] text-white" : "hover:bg-muted",
-                      )}
-                    >
-                      {format(day, "d")}
-                    </button>
-                  );
-                })}
-              </div>
+              <CalendarBody
+                cursor={cursor}
+                days={days}
+                selected={selected}
+                today={today}
+                onCursor={setCursor}
+                onPick={(day) => {
+                  onChange(format(day, "yyyy-MM-dd"));
+                  setOpen(false);
+                }}
+              />
             </div>,
             document.body,
           )
-        : null}
+        )
+      ) : null}
+    </>
+  );
+}
+
+function CalendarBody({
+  cursor,
+  days,
+  selected,
+  today,
+  onCursor,
+  onPick,
+}: {
+  cursor: Date;
+  days: Date[];
+  selected: Date | null;
+  today: Date;
+  onCursor: (update: (month: Date) => Date) => void;
+  onPick: (day: Date) => void;
+}) {
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-between">
+        <button
+          type="button"
+          aria-label="Previous month"
+          className="flex size-10 items-center justify-center rounded-md hover:bg-muted"
+          onClick={() => onCursor((month) => addMonths(month, -1))}
+        >
+          <ChevronLeft className="size-5" />
+        </button>
+        <p className="text-base font-semibold tracking-tight">{format(cursor, "MMMM yyyy")}</p>
+        <button
+          type="button"
+          aria-label="Next month"
+          className="flex size-10 items-center justify-center rounded-md hover:bg-muted"
+          onClick={() => onCursor((month) => addMonths(month, 1))}
+        >
+          <ChevronRight className="size-5" />
+        </button>
+      </div>
+      <div className="mb-1 grid grid-cols-7 text-center text-xs font-medium text-muted-foreground">
+        {WEEKDAYS.map((day, index) => (
+          <span key={`${day}-${index}`} className="flex h-8 items-center justify-center">
+            {day}
+          </span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 justify-items-center">
+        {days.map((day) => {
+          const on = selected ? isSameDay(day, selected) : false;
+          const inMonth = isSameMonth(day, cursor);
+          return (
+            <button
+              key={day.toISOString()}
+              type="button"
+              onClick={() => onPick(day)}
+              className={cn(
+                "flex size-11 items-center justify-center rounded-full text-[15px] font-medium",
+                !inMonth && "text-muted-foreground/40",
+                !on && isSameDay(day, today) && "bg-muted",
+                on ? "bg-[#0075de] text-white" : "hover:bg-muted",
+              )}
+            >
+              {format(day, "d")}
+            </button>
+          );
+        })}
+      </div>
     </>
   );
 }

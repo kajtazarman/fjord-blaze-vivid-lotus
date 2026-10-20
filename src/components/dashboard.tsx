@@ -26,7 +26,6 @@ import {
   fileLimitBytes,
   formatDays,
   formatExpiry,
-  isMine,
   isoFromToday,
   lockedDocumentIds,
   noticeAlertWindow,
@@ -41,7 +40,7 @@ import {
   type SortId,
 } from "@/lib/documents";
 import { SiteFooter } from "@/components/site-footer";
-import { useDocket, useDocketHydrated, type AccountProfile } from "@/lib/store";
+import { useDocket, useDocketHydrated, type AccountProfile, type MailMessage } from "@/lib/store";
 import type { TwoFactor, TwoFactorMethod } from "@/lib/two-factor";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -117,6 +116,8 @@ export function Dashboard() {
   const logOut = useDocket((s) => s.logOut);
   const sentAlerts = useDocket((s) => s.sentAlerts);
   const dismissAlert = useDocket((s) => s.dismissAlert);
+  const emails = useDocket((s) => s.emails);
+  const addExpiryMail = useDocket((s) => s.addExpiryMail);
 
   const [now] = useState(() => new Date());
   const [panel, setPanel] = useState<Panel>("board");
@@ -129,6 +130,7 @@ export function Dashboard() {
   const [editing, setEditing] = useState<DocumentRecord | null>(null);
   const [renewing, setRenewing] = useState<DocumentRecord | null>(null);
   const [renewDate, setRenewDate] = useState("");
+  const [renewNotice, setRenewNotice] = useState("");
   const [removing, setRemoving] = useState<DocumentRecord | null>(null);
   const [moving, setMoving] = useState<DocumentRecord | null>(null);
   const [removingFolder, setRemovingFolder] = useState<FolderRecord | null>(null);
@@ -140,7 +142,6 @@ export function Dashboard() {
     editing: boolean;
   } | null>(null);
   const [sort, setSort] = useState<SortId>("soonest");
-  const [mineOnly, setMineOnly] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const pdfRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -155,12 +156,13 @@ export function Dashboard() {
   );
   const folderList = folders ?? [];
   const openFolder = folderList.find((folder) => folder.id === openFolderId) ?? null;
-  const me = [account.firstName, account.lastName].filter(Boolean).join(" ") || account.email || "Me";
+  const childFolders = openFolder
+    ? folderList.filter((folder) => (folder.parentId ?? "") === openFolder.id)
+    : [];
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return sortDocuments(
       documents.filter((doc) => {
-        if (mineOnly && !isMine(doc.owner ?? "", me)) return false;
         if (openFolderId && (doc.folderId ?? "") !== openFolderId) return false;
         if (!q) return true;
         return `${doc.title} ${doc.issuer} ${doc.reference} ${doc.notes} ${doc.fileName} ${doc.owner ?? ""}`
@@ -171,7 +173,7 @@ export function Dashboard() {
       now,
       timezone,
     );
-  }, [documents, query, now, openFolderId, sort, timezone, mineOnly, me]);
+  }, [documents, query, now, openFolderId, sort, timezone]);
 
   const dueAlerts = useMemo(() => {
     const sent = new Set((sentAlerts ?? []).map((item) => `${item.documentId}:${item.offsetDays}`));
@@ -187,6 +189,19 @@ export function Dashboard() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  useEffect(() => {
+    if (!account.email.includes("@")) return;
+    for (const item of dueAlerts) {
+      addExpiryMail({
+        id: `expiry:${item.doc.id}:${item.window}`,
+        to: account.email,
+        subject: `${item.doc.title} is ${item.days} days from its notice`,
+        body: `DigiSef reminder: ${item.doc.title} reaches its ${item.window}-day notice on ${formatExpiry(item.doc.noticeDeadline || item.doc.expiryDate)}. Open the board to renew it.`,
+        kind: "expiry",
+      });
+    }
+  }, [dueAlerts, account.email, addExpiryMail]);
 
   function withFolder(next: DocumentDraft): DocumentDraft {
     return { ...next, folderId: next.folderId || openFolderId || "" };
@@ -250,7 +265,8 @@ export function Dashboard() {
 
   function openRenew(item: DocumentRecord) {
     setRenewing(item);
-    setRenewDate(isoFromToday(365, now));
+    setRenewDate(item.expiryDate);
+    setRenewNotice(item.noticeDeadline || item.expiryDate);
   }
 
   function saveDraft(next: DocumentDraft) {
@@ -300,9 +316,10 @@ export function Dashboard() {
       <aside className="hidden h-full w-[72px] shrink-0 flex-col items-center gap-1 border-r border-border bg-muted py-3 md:flex">
         <p className="mb-3 px-1 text-center text-[11px] leading-tight font-bold tracking-[-0.04em]">DigiSef</p>
         <RailButton
-          active={panel === "board"}
+          active={panel === "board" && !showCheckout}
           label="Board"
           onClick={() => {
+            setShowCheckout(false);
             setOpenFolderId(null);
             setPanel("board");
           }}
@@ -310,24 +327,33 @@ export function Dashboard() {
           <SquareStack />
         </RailButton>
         <RailButton
-          active={panel === "folders"}
+          active={panel === "folders" && !showCheckout}
           label="Folders"
-          onClick={() => setPanel("folders")}
+          onClick={() => {
+            setShowCheckout(false);
+            setPanel("folders");
+          }}
         >
           <Folder />
         </RailButton>
         <div className="mt-auto flex flex-col items-center">
           <RailButton
-            active={panel === "account"}
+            active={panel === "account" && !showCheckout}
             label="Account"
-            onClick={() => setPanel("account")}
+            onClick={() => {
+              setShowCheckout(false);
+              setPanel("account");
+            }}
           >
             <User />
           </RailButton>
           <RailButton
-            active={panel === "settings"}
+            active={panel === "settings" && !showCheckout}
             label="Settings"
-            onClick={() => setPanel("settings")}
+            onClick={() => {
+              setShowCheckout(false);
+              setPanel("settings");
+            }}
           >
             <Settings />
           </RailButton>
@@ -361,7 +387,6 @@ export function Dashboard() {
         <div className="flex-1">
         {showCheckout ? (
           <CheckoutScreen
-            onBack={() => setShowCheckout(false)}
             onPaid={(chosen) => {
               setPlan(chosen);
               setShowCheckout(false);
@@ -400,16 +425,6 @@ export function Dashboard() {
               <ViewButton active={view === "list"} label="List" onClick={() => setView("list")}>
                 <List />
               </ViewButton>
-              <button
-                type="button"
-                onClick={() => setMineOnly((on) => !on)}
-                className={cn(
-                  "flex h-9 items-center rounded-full px-3 text-sm",
-                  mineOnly ? "bg-foreground text-background" : "bg-card text-foreground shadow-[var(--shadow-card)]",
-                )}
-              >
-                My docs
-              </button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -440,6 +455,20 @@ export function Dashboard() {
                 </button>
               ) : null}
             </div>
+            {childFolders.length > 0 ? (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {childFolders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    onClick={() => setOpenFolderId(folder.id)}
+                    className="rounded-md border border-[#0075de] bg-[#e6f3fe] px-3 py-2 text-sm font-semibold text-[#0075de]"
+                  >
+                    {folder.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {dueAlerts.length > 0 ? (
               <div className="mb-4 grid gap-2">
                 <div className="flex items-center justify-between">
@@ -542,8 +571,8 @@ export function Dashboard() {
               setOpenFolderId(id);
               setPanel("board");
             }}
-            onCreate={(folderName, ids) => {
-              const id = addFolder(folderName);
+            onCreate={(folderName, ids, parentId) => {
+              const id = addFolder(folderName, parentId);
               for (const docId of ids) moveDocument(docId, id);
               toast.success(ids.length ? "Folder created" : "Empty folder created");
             }}
@@ -579,6 +608,7 @@ export function Dashboard() {
             timezone={timezone}
             zones={zoneChoices(timezone)}
             onTimezone={setTimezone}
+            emails={emails ?? []}
           />
         ) : null}
 
@@ -620,12 +650,13 @@ export function Dashboard() {
               type="button"
               aria-current={panel === id ? "page" : undefined}
               onClick={() => {
+                setShowCheckout(false);
                 if (id === "board") setOpenFolderId(null);
                 setPanel(id);
               }}
               className={cn(
                 "flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 border-t-2 text-[10px] font-medium",
-                panel === id ? "border-[#0075de] font-bold text-[#0075de]" : "border-transparent text-muted-foreground",
+                panel === id && !showCheckout ? "border-[#0075de] font-bold text-[#0075de]" : "border-transparent text-muted-foreground",
               )}
             >
               <Icon className="size-5" />
@@ -723,30 +754,43 @@ export function Dashboard() {
       </Dialog>
 
       <Dialog open={renewing !== null} onOpenChange={(open) => !open && setRenewing(null)}>
-        <DialogContent>
+        <DialogContent
+          onPointerDownOutside={(event) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest("[data-datepicker]")) event.preventDefault();
+          }}
+          onInteractOutside={(event) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest("[data-datepicker]")) event.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Renew {renewing?.title}</DialogTitle>
-            <DialogDescription>Set the next expiry date.</DialogDescription>
+            <DialogDescription>Change the expiry and the notice date, then save.</DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-4"
             onSubmit={(event) => {
               event.preventDefault();
               if (!renewing || !renewDate) return;
-              const was = daysUntil(renewing.expiryDate, now);
-              renewDocument(renewing.id, renewDate);
-              toast.success(
-                was < 0 ? "Marked renewed" : `Renewed — was ${was} days out`,
-              );
+              renewDocument(renewing.id, renewDate, renewNotice || undefined);
+              toast.success("Dates saved");
               setRenewing(null);
             }}
           >
-            <DatePicker label="Next expiry date" value={renewDate} onChange={setRenewDate} />
+            <label className="grid gap-1.5 text-sm">
+              Expiration date
+              <DatePicker contained label="Expiration date" value={renewDate} onChange={setRenewDate} />
+            </label>
+            <label className="grid gap-1.5 text-sm">
+              Notice deadline
+              <DatePicker contained label="Notice deadline" value={renewNotice} onChange={setRenewNotice} />
+            </label>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setRenewing(null)}>
                 Cancel
               </Button>
-              <Button type="submit">Save date</Button>
+              <Button type="submit">Save dates</Button>
             </div>
           </form>
         </DialogContent>
@@ -975,11 +1019,12 @@ function FoldersPanel({
   folders: FolderRecord[];
   documents: DocumentRecord[];
   onOpen: (id: string) => void;
-  onCreate: (name: string, documentIds: string[]) => void;
+  onCreate: (name: string, documentIds: string[], parentId: string) => void;
   onRename: (id: string, name: string) => void;
   onRemove: (folder: FolderRecord) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [parentId, setParentId] = useState("");
   const [name, setName] = useState("");
   const [nameMissing, setNameMissing] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
@@ -1017,8 +1062,9 @@ function FoldersPanel({
             return;
           }
           setNameMissing(false);
-          onCreate(name.trim(), picked);
+          onCreate(name.trim(), picked, parentId);
           setName("");
+          setParentId("");
           setPicked([]);
           setDocQuery("");
           setAdding(false);
@@ -1041,6 +1087,21 @@ function FoldersPanel({
           {nameMissing ? (
             <span className="font-medium text-[#ff0000]">Enter a folder name.</span>
           ) : null}
+        </label>
+        <label className="mt-4 grid gap-1.5 text-sm">
+          Inside
+          <select
+            value={parentId}
+            onChange={(event) => setParentId(event.target.value)}
+            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="">No parent — top level</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
         </label>
         <p className="mt-4 text-sm text-muted-foreground">
           Search the board, then pick the documents to add.
@@ -1101,7 +1162,10 @@ function FoldersPanel({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <button
           type="button"
-          onClick={() => setAdding(true)}
+          onClick={() => {
+            setParentId("");
+            setAdding(true);
+          }}
           className="add-tile flex min-h-52 flex-col items-start rounded-lg p-4 text-left"
         >
           <span className="flex size-9 items-center justify-center rounded-full bg-[#0075de] text-white">
@@ -1114,6 +1178,8 @@ function FoldersPanel({
         </button>
         {folders.map((folder) => {
           const count = documents.filter((doc) => doc.folderId === folder.id).length;
+          const children = folders.filter((item) => (item.parentId ?? "") === folder.id).length;
+          const parent = folders.find((item) => item.id === (folder.parentId ?? ""));
           return (
             <article
               key={folder.id}
@@ -1147,7 +1213,9 @@ function FoldersPanel({
                   <h3 className="mt-2 text-lg font-medium tracking-tight">{folder.name}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {count} {count === 1 ? "document" : "documents"}
+                    {children ? ` · ${children} ${children === 1 ? "subfolder" : "subfolders"}` : ""}
                   </p>
+                  {parent ? <p className="mt-1 text-xs text-[#0075de]">Inside {parent.name}</p> : null}
                 </div>
               )}
               <div
@@ -1156,6 +1224,16 @@ function FoldersPanel({
               >
                 <Button size="sm" variant="outline" onClick={() => onOpen(folder.id)}>
                   Open
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setParentId(folder.id);
+                    setAdding(true);
+                  }}
+                >
+                  Subfolder
                 </Button>
                 <Button
                   size="sm"
@@ -1385,6 +1463,7 @@ function AccountPanel({
   timezone,
   zones,
   onTimezone,
+  emails,
 }: {
   account: AccountProfile;
   passwordSet: boolean;
@@ -1395,6 +1474,7 @@ function AccountPanel({
   timezone: string;
   zones: string[];
   onTimezone: (timezone: string) => void;
+  emails: MailMessage[];
 }) {
   const [profile, setProfile] = useState(account);
   const [changingPassword, setChangingPassword] = useState(false);
@@ -1465,6 +1545,23 @@ function AccountPanel({
         <p className="mt-2 text-sm text-muted-foreground">
           Name, phone, email, and timezone for this board.
         </p>
+        <div className="mt-5 grid gap-2">
+          <h3 className="text-sm font-semibold">Emails</h3>
+          {emails.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No mail yet. Confirmation, verification, and expiry reminders show up here.</p>
+          ) : (
+            emails.map((mail) => (
+              <article key={mail.id} className="rounded-md border border-border px-3 py-3">
+                <p className="text-xs font-semibold text-[#0075de]">
+                  {mail.kind === "confirm" ? "Account created" : mail.kind === "verify" ? "Verify account" : "Document expiring"}
+                </p>
+                <p className="mt-1 text-sm font-medium">{mail.subject}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{mail.body}</p>
+                <p className="mt-1 text-xs text-muted-foreground">To {mail.to}</p>
+              </article>
+            ))
+          )}
+        </div>
         <div className="mt-6 grid flex-1 content-start gap-4 md:grid-cols-2 md:gap-x-8 md:gap-y-5">
           <label className="grid gap-1.5 text-sm">
             First name

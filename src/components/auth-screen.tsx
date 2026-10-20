@@ -13,12 +13,17 @@ export function AuthScreen() {
   const login = useDocket((state) => state.login);
   const resetPassword = useDocket((state) => state.resetPassword);
   const confirmCode = useDocket((state) => state.confirmCode);
+  const confirmAccount = useDocket((state) => state.confirmAccount);
+  const setRemember = useDocket((state) => state.setRemember);
+  const remember = useDocket((state) => state.remember);
+  const emails = useDocket((state) => state.emails);
   const accountEmail = useDocket((state) => state.account.email);
   const hasPassword = useDocket((state) => Boolean(state.password));
   const [mode, setMode] = useState<"login" | "register">("login");
   const [forgot, setForgot] = useState(false);
   const [resetReady, setResetReady] = useState(false);
   const [needsCode, setNeedsCode] = useState(false);
+  const [verifyAccount, setVerifyAccount] = useState(false);
   const [code, setCode] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -29,6 +34,13 @@ export function AuthScreen() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
+    if (verifyAccount) {
+      const result = confirmAccount(code);
+      setBusy(false);
+      if (result === "wrong") toast.error("That code is wrong.");
+      else toast.success("Email confirmed. You are signed in.");
+      return;
+    }
     if (needsCode) {
       const result = await confirmCode(code);
       setBusy(false);
@@ -64,6 +76,11 @@ export function AuthScreen() {
       setBusy(false);
       if (result === "none") toast.error("No account yet. Register first.");
       else if (result === "wrong") toast.error("Email or password is wrong.");
+      else if (result === "verify") {
+        setVerifyAccount(true);
+        setCode("");
+        toast.message("Confirm the code from your verification email.");
+      }
       else if (result === "otp") {
         const factor = useDocket.getState().twoFactor;
         const sent = issuedTwoFactorCode();
@@ -85,6 +102,11 @@ export function AuthScreen() {
     if (result === "email") toast.error("Enter a real email.");
     else if (result === "short") toast.error("Password needs at least 8 characters.");
     else if (result === "exists") toast.error("An account already exists. Log in.");
+    else {
+      setVerifyAccount(true);
+      setCode("");
+      toast.success("Confirmation and verification emails sent.");
+    }
   }
 
   return (
@@ -125,7 +147,35 @@ export function AuthScreen() {
             </button>
           </div>
           <form onSubmit={(event) => void submit(event)} className="mt-4 grid w-full max-w-sm gap-2.5">
-            {needsCode ? (
+            {verifyAccount ? (
+              <>
+                <p className="text-sm text-[#37352f]/70">
+                  We sent a confirmation email and a verification email. Enter the code from the verification email.
+                </p>
+                {(emails ?? [])
+                  .filter((mail) => mail.kind === "confirm" || mail.kind === "verify")
+                  .slice(0, 2)
+                  .map((mail) => (
+                    <article key={mail.id} className="rounded-md border border-[#e6e5e3] bg-white px-3 py-3 text-left">
+                      <p className="text-xs font-semibold text-[#0075de]">
+                        {mail.kind === "confirm" ? "Account created" : "Verify account"}
+                      </p>
+                      <p className="mt-1 text-sm font-medium">{mail.subject}</p>
+                      <p className="mt-1 text-sm text-[#37352f]/70">{mail.body}</p>
+                    </article>
+                  ))}
+                <Input
+                  inputMode="numeric"
+                  value={code}
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="Verification code"
+                  aria-label="Verification code"
+                  autoComplete="one-time-code"
+                  className="border-[#e6e5e3] bg-white"
+                  required
+                />
+              </>
+            ) : needsCode ? (
               <Input
                 inputMode="numeric"
                 value={code}
@@ -180,6 +230,17 @@ export function AuthScreen() {
                 required
               />
             )}
+            {mode === "login" && !forgot ? (
+              <label className="flex items-center gap-2 text-sm text-[#37352f]">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-[#0075de]"
+                  checked={remember}
+                  onChange={(event) => setRemember(event.target.checked)}
+                />
+                Remember me
+              </label>
+            ) : null}
             {mode === "login" ? (
               <button
                 type="button"
@@ -195,7 +256,9 @@ export function AuthScreen() {
               </>
             )}
             <Button type="submit" disabled={busy} className="mt-1 h-9 w-full rounded-md bg-[#0075de] text-white hover:bg-[#005bab]">
-              {needsCode
+              {verifyAccount
+                ? "Confirm email"
+                : needsCode
                 ? "Confirm code"
                 : forgot && mode === "login"
                   ? resetReady

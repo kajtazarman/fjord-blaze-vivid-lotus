@@ -7,9 +7,15 @@ export function DocsScreen({ slug }: { slug: string | null }) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center bg-background px-3">
-        <Link to="/" className="text-[15px] font-bold tracking-[-0.04em] text-foreground">
+      <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between bg-background/85 px-4 backdrop-blur-md sm:px-6">
+        <Link to="/" className="text-[17px] font-bold tracking-[-0.05em] text-foreground">
           DigiSef
+        </Link>
+        <Link
+          to="/login"
+          className="inline-flex h-8 items-center rounded-md bg-[#0075de] px-3 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#005bab]"
+        >
+          Login
         </Link>
       </header>
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8">

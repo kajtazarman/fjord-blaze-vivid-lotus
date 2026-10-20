@@ -5,6 +5,8 @@ import {
   BUILTIN_TEMPLATES,
   backfillDemoFields,
   createDemoDocuments,
+  defaultNotice,
+  templateById,
   type DocTemplate,
   type DocumentDraft,
   type DocumentRecord,
@@ -12,6 +14,15 @@ import {
   withAccountability,
 } from "@/lib/documents";
 import { codeMatches, createSecret, oneTimeCode, type TwoFactor, type TwoFactorMethod } from "@/lib/two-factor";
+
+export type MailMessage = {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  sentAt: string;
+  kind: "confirm" | "verify" | "expiry";
+};
 
 type PlanId = "free" | "plus" | "monthly" | "yearly" | "lifetime";
 
@@ -36,10 +47,13 @@ type DocketState = {
   password: PasswordRecord;
   signedIn: boolean;
   sentAlerts: { documentId: string; offsetDays: number }[];
+  emails: MailMessage[];
+  remember: boolean;
+  pendingVerify: { email: string; code: string } | null;
   twoFactor: TwoFactor | null;
   addDocument: (draft: DocumentDraft) => void;
   updateDocument: (id: string, draft: DocumentDraft) => void;
-  renewDocument: (id: string, expiryDate: string) => void;
+  renewDocument: (id: string, expiryDate: string, noticeDeadline?: string) => void;
   removeDocument: (id: string) => void;
   moveDocument: (id: string, folderId: string) => void;
   importDocuments: (docs: DocumentRecord[]) => void;
@@ -49,7 +63,7 @@ type DocketState = {
     template: Pick<DocTemplate, "name" | "category" | "remindDays" | "notes"> & Partial<DocTemplate>,
   ) => void;
   removeTemplate: (id: string) => void;
-  addFolder: (name: string) => string;
+  addFolder: (name: string, parentId?: string) => string;
   renameFolder: (id: string, name: string) => void;
   removeFolder: (id: string) => void;
   setTheme: (theme: "light" | "dark") => void;
@@ -63,11 +77,14 @@ type DocketState = {
     email: string;
     password: string;
   }) => Promise<"ok" | "short" | "email" | "exists">;
-  login: (email: string, password: string) => Promise<"ok" | "none" | "wrong" | "otp">;
+  login: (email: string, password: string) => Promise<"ok" | "none" | "wrong" | "otp" | "verify">;
   resetPassword: (email: string, next: string) => Promise<"ok" | "short" | "none">;
   setTwoFactor: (method: TwoFactorMethod | null) => "ok" | "email" | "phone";
   confirmCode: (code: string) => Promise<"ok" | "wrong">;
   dismissAlert: (documentId: string, offsetDays: number) => void;
+  setRemember: (remember: boolean) => void;
+  confirmAccount: (code: string) => "ok" | "wrong";
+  addExpiryMail: (mail: Omit<MailMessage, "sentAt">) => void;
   logOut: () => void;
 };
 
@@ -128,6 +145,9 @@ export const useDocket = create<DocketState>()(
       password: null,
       signedIn: false,
       sentAlerts: [],
+      emails: [],
+      remember: true,
+      pendingVerify: null,
       twoFactor: null,
       addDocument: (draft) => {
         const record: DocumentRecord = {
@@ -173,11 +193,23 @@ export const useDocket = create<DocketState>()(
           ),
         });
       },
-      renewDocument: (id, expiryDate) => {
+      renewDocument: (id, expiryDate, noticeDeadline) => {
         set({
-          documents: get().documents.map((doc) =>
-            doc.id === id ? { ...doc, expiryDate } : doc,
-          ),
+          documents: get().documents.map((doc) => {
+            if (doc.id !== id) return doc;
+            const template = templateById(doc.templateId);
+            const key = template?.expiryKey ?? "expiry";
+            const fields = { ...(doc.fields ?? {}), [key]: expiryDate };
+            const notice =
+              noticeDeadline && noticeDeadline <= expiryDate ? noticeDeadline : defaultNotice(expiryDate);
+            return withAccountability({
+              ...doc,
+              expiryDate,
+              noticeDeadline: notice,
+              fields,
+              decision: "active",
+            });
+          }),
         });
       },
       removeDocument: (id) => {
@@ -229,8 +261,8 @@ export const useDocket = create<DocketState>()(
       removeTemplate: (id) => {
         set({ customTemplates: get().customTemplates.filter((item) => item.id !== id) });
       },
-      addFolder: (name) => {
-        const folder: Folder = { id: newId(), name: name.trim() };
+      addFolder: (name, parentId = "") => {
+        const folder: Folder = { id: newId(), name: name.trim(), parentId };
         set({ folders: [folder, ...get().folders] });
         return folder.id;
       },
@@ -244,10 +276,19 @@ export const useDocket = create<DocketState>()(
         });
       },
       removeFolder: (id) => {
+        const all = get().folders;
+        const drop = new Set<string>();
+        const walk = (folderId: string) => {
+          drop.add(folderId);
+          for (const folder of all) {
+            if ((folder.parentId ?? "") === folderId) walk(folder.id);
+          }
+        };
+        walk(id);
         set({
-          folders: get().folders.filter((folder) => folder.id !== id),
+          folders: all.filter((folder) => !drop.has(folder.id)),
           documents: get().documents.map((doc) =>
-            doc.folderId === id ? { ...doc, folderId: "" } : doc,
+            drop.has(doc.folderId) ? { ...doc, folderId: "" } : doc,
           ),
         });
       },
@@ -273,6 +314,9 @@ export const useDocket = create<DocketState>()(
         if (get().password) return "exists";
         const salt = newId();
         const current = get().account;
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        const sentAt = new Date().toISOString();
+        const hello = firstName.trim() || "there";
         set({
           account: cleanAccount({
             ...current,
@@ -281,7 +325,27 @@ export const useDocket = create<DocketState>()(
             email: nextEmail,
           }),
           password: { salt, hash: await hashPassword(password.trim(), salt) },
-          signedIn: true,
+          signedIn: false,
+          pendingVerify: { email: nextEmail, code },
+          emails: [
+            {
+              id: newId(),
+              to: nextEmail,
+              subject: "Verify your DigiSef email",
+              body: `Enter this code to verify ${nextEmail}: ${code}`,
+              sentAt,
+              kind: "verify",
+            },
+            {
+              id: newId(),
+              to: nextEmail,
+              subject: "Your DigiSef account was created",
+              body: `Hello ${hello}. Your DigiSef account is ready. Use the verification email to confirm it before you sign in.`,
+              sentAt,
+              kind: "confirm",
+            },
+            ...get().emails,
+          ],
         });
         return "ok";
       },
@@ -295,11 +359,16 @@ export const useDocket = create<DocketState>()(
           const hash = await hashPassword(password, existing.salt);
           if (hash !== existing.hash) return "wrong";
         }
+        const pending = get().pendingVerify;
+        if (pending && email.trim().toLowerCase() === pending.email.toLowerCase()) {
+          return "verify";
+        }
         if (get().twoFactor) {
           pendingCode = get().twoFactor?.method === "app" ? "" : oneTimeCode();
           return "otp";
         }
         set({ signedIn: true });
+        rememberSession(get().remember);
         return "ok";
       },
       resetPassword: async (email, next) => {
@@ -330,18 +399,37 @@ export const useDocket = create<DocketState>()(
         if (!ok) return "wrong";
         pendingCode = "";
         set({ signedIn: true });
+        rememberSession(get().remember);
         return "ok";
+      },
+      confirmAccount: (code) => {
+        const pending = get().pendingVerify;
+        if (!pending || code.replace(/\D/g, "") !== pending.code) return "wrong";
+        set({ signedIn: true, pendingVerify: null });
+        rememberSession(get().remember);
+        return "ok";
+      },
+      setRemember: (remember) => set({ remember }),
+      addExpiryMail: (mail) => {
+        const emails = get().emails ?? [];
+        if (emails.some((item) => item.id === mail.id)) return;
+        set({
+          emails: [{ ...mail, sentAt: new Date().toISOString() }, ...emails],
+        });
       },
       dismissAlert: (documentId, offsetDays) => {
         const sentAlerts = get().sentAlerts ?? [];
         if (sentAlerts.some((item) => item.documentId === documentId && item.offsetDays === offsetDays)) return;
         set({ sentAlerts: [...sentAlerts, { documentId, offsetDays }] });
       },
-      logOut: () => set({ signedIn: false }),
+      logOut: () => {
+        sessionStorage.removeItem("digisef-session");
+        set({ signedIn: false });
+      },
     }),
     {
       name: "digitalni-sef-board-v1",
-      version: 9,
+      version: 10,
       skipHydration: true,
       migrate: (persisted) => {
         const state = persisted as Partial<DocketState>;
@@ -353,7 +441,10 @@ export const useDocket = create<DocketState>()(
             : null;
         return {
           ...state,
-          folders: state.folders ?? [],
+          folders: (state.folders ?? []).map((folder) => ({
+            ...folder,
+            parentId: folder.parentId ?? "",
+          })),
           customTemplates: state.customTemplates ?? [],
           theme: state.theme === "dark" ? "dark" : "light",
           timezone: state.timezone || detectedZone(),
@@ -390,11 +481,19 @@ export const useDocket = create<DocketState>()(
             ),
           ),
           sentAlerts: state.sentAlerts ?? [],
+          emails: state.emails ?? [],
+          remember: state.remember !== false,
+          pendingVerify: state.pendingVerify?.email && state.pendingVerify?.code ? state.pendingVerify : null,
         } as DocketState;
       },
     },
   ),
 );
+
+function rememberSession(remember: boolean) {
+  if (remember) sessionStorage.removeItem("digisef-session");
+  else sessionStorage.setItem("digisef-session", "1");
+}
 
 export function useDocketHydrated(): boolean {
   const [ready, setReady] = useState(false);
@@ -402,6 +501,9 @@ export function useDocketHydrated(): boolean {
   useEffect(() => {
     let cancelled = false;
     void Promise.resolve(useDocket.persist.rehydrate()).finally(() => {
+      if (!useDocket.getState().remember && sessionStorage.getItem("digisef-session") !== "1") {
+        useDocket.setState({ signedIn: false });
+      }
       if (!cancelled) setReady(true);
     });
     return () => {

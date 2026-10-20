@@ -22,10 +22,8 @@ function checkoutHref(raw: string, embed: boolean) {
 }
 
 export function CheckoutScreen({
-  onBack,
   onPaid,
 }: {
-  onBack: () => void;
   onPaid: (plan: PaidPlan) => void;
 }) {
   const [picked, setPicked] = useState<PaidPlan>("lifetime");
@@ -73,9 +71,6 @@ export function CheckoutScreen({
   return (
     <div>
       <main className="mx-auto flex w-full max-w-lg flex-col px-4 py-8">
-        <button type="button" onClick={onBack} className="back-link">
-          Back
-        </button>
           <p className="text-sm text-muted-foreground">DigiSef Plus</p>
           <h1 className="mt-2 text-2xl font-medium tracking-tight">Choose a plan</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -94,20 +89,20 @@ export function CheckoutScreen({
                     "rounded-lg px-4 text-left",
                     lifetime ? "min-h-36 py-5" : "py-4",
                     selected
-                      ? "bg-foreground text-background"
-                      : "bg-card text-foreground shadow-[var(--shadow-card)]",
+                      ? "border-2 border-[#0075de] bg-[#e6f3fe] text-[#0075de]"
+                      : "border border-transparent bg-card text-foreground shadow-[var(--shadow-card)]",
                   )}
                 >
                   <span className="flex items-baseline justify-between gap-3">
                     <span className={cn("font-medium", lifetime && "text-xl")}>{plan.name}</span>
                     <span className={cn("font-medium", lifetime ? "text-3xl" : "text-lg")}>
                       {plan.price}
-                      <span className={cn("font-normal", selected ? "text-background/70" : "text-muted-foreground")}>
+                      <span className={cn("font-normal", selected ? "text-[#0075de]/70" : "text-muted-foreground")}>
                         {plan.interval === "once" ? "" : ` / ${plan.interval}`}
                       </span>
                     </span>
                   </span>
-                  <span className={cn("mt-2 block text-sm", selected ? "text-background/70" : "text-muted-foreground")}>
+                  <span className={cn("mt-2 block text-sm", selected ? "text-[#0075de]" : "text-muted-foreground")}>
                     {plan.note}
                   </span>
                 </button>

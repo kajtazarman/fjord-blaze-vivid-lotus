@@ -235,6 +235,7 @@ export function emptyDraft(): DocumentDraft {
 export type Folder = {
   id: string;
   name: string;
+  parentId: string;
 };
 
 export type FieldKind = "text" | "date" | "long";
